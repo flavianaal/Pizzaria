@@ -1,5 +1,7 @@
 package org.pizzaria.resource;
 
+import org.pizzaria.dto.AtualizarImagemDTO;
+
 
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -104,33 +106,39 @@ public class PizzaResource {
     }
 
 
+    // MÉTODO ORIGINAL: atualiza os dados gerais da pizza.
+    // Endpoint: PUT /pizzas/{id}
     @PUT
     @Path("/{id}")
     @Transactional
     @RolesAllowed("admin")
-    public Response atualizar(@PathParam("id") Long id, PizzaDTO pizzaDTO){
+    public Response atualizar(@PathParam("id") Long id, PizzaDTO pizzaDTO) {
 
+        // Busca a pizza pelo ID.
         Pizza pizza = pizzaRepository.pesquisarID(id);
 
-        if (pizza == null){
-
+        if (pizza == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity("Pizza não encontrada").build();
         }
 
-
+        // Atualiza a lista de ingredientes.
         List<Ingrediente> ingredientes = new ArrayList<>();
-        for (Long ids: pizzaDTO.getIngredientesId()){
+
+        for (Long ids : pizzaDTO.getIngredientesId()) {
             Ingrediente ingrediente = ingredienteRepository.pesquisarID(ids);
-            if (ingrediente != null){
+
+            if (ingrediente != null) {
                 ingredientes.add(ingrediente);
             }
         }
 
+        // Atualiza os tamanhos e preços da pizza.
         List<ItemPizza> itensAtual = pizza.getItens();
         itensAtual.clear();
-        if (!pizzaDTO.getItens().isEmpty()){
-            for (ItemPizzaDTO itemPizzaDTO: pizzaDTO.getItens()) {
+
+        if (!pizzaDTO.getItens().isEmpty()) {
+            for (ItemPizzaDTO itemPizzaDTO : pizzaDTO.getItens()) {
                 ItemPizza itemPizza = new ItemPizza();
                 itemPizza.setTamanho(itemPizzaDTO.getTamanho());
                 itemPizza.setValor(itemPizzaDTO.getValor());
@@ -138,20 +146,80 @@ public class PizzaResource {
             }
         }
 
-        String caminhoImagem = null;
-        if (pizzaDTO.getImagemBase64()!= null && !pizzaDTO.getImagemBase64().isEmpty()){
-            caminhoImagem = UtilitarioImage.salvarImagem(diretorio, pizzaDTO.getImagemBase64());
+        // ALTERAÇÃO: preserva a imagem atual caso nenhuma nova imagem
+        // seja enviada pelo método de atualização geral.
+        String caminhoImagem = pizza.getCaminhoImagem();
 
+        if (pizzaDTO.getImagemBase64() != null &&
+                !pizzaDTO.getImagemBase64().isEmpty()) {
+
+            caminhoImagem = UtilitarioImage.salvarImagem(
+                    diretorio,
+                    pizzaDTO.getImagemBase64()
+            );
         }
 
+        // Atualiza os dados da pizza.
         pizza.setNome(pizzaDTO.getNome());
         pizza.setDescricao(pizzaDTO.getDescricao());
         pizza.setIngredientes(ingredientes);
         pizza.setItens(itensAtual);
         pizza.setCaminhoImagem(caminhoImagem);
 
-
         return Response.ok(pizza).build();
+    }
+
+
+
+
+    // NOVO MÉTODO: atualiza somente a imagem principal da pizza.
+    // Endpoint: PUT /pizzas/{id}/imagem
+    @PUT
+    @Path("/{id}/imagem")
+    @Transactional
+    @RolesAllowed("admin")
+    public Response atualizarImagem(
+            @PathParam("id") Long id,
+            AtualizarImagemDTO imagemDTO) {
+
+        // 1. Busca a pizza pelo ID recebido na URL.
+        Pizza pizza = pizzaRepository.pesquisarID(id);
+
+        // 2. Verifica se a pizza existe.
+        if (pizza == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("Pizza não encontrada").build();
+        }
+
+        // 3. Verifica se uma imagem foi enviada.
+        if (imagemDTO == null ||
+                imagemDTO.getImagemBase64() == null ||
+                imagemDTO.getImagemBase64().trim().isEmpty()) {
+
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("A imagem não foi enviada").build();
+        }
+
+        try {
+            // 4. Salva a nova imagem usando o utilitário existente.
+            String novoCaminhoImagem = UtilitarioImage.salvarImagem(
+                    diretorio,
+                    imagemDTO.getImagemBase64()
+            );
+
+            // 5. Atualiza somente o caminho da imagem principal.
+            // Os outros dados da pizza permanecem inalterados.
+            pizza.setCaminhoImagem(novoCaminhoImagem);
+
+            // 6. Retorna a pizza com a nova imagem.
+            return Response.ok(pizza).build();
+
+        } catch (IllegalArgumentException e) {
+
+            // Retorna erro caso o Base64 da imagem seja inválido.
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Formato de imagem inválido").build();
+        }
     }
 
     @DELETE
